@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server"
 
-// This is a mock implementation - replace with your actual backend URL
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000"
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8080"
 
 export async function POST() {
   try {

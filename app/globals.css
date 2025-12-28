@@ -123,3 +123,51 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Custom styles for markdown content */
+@layer components {
+  .prose {
+    /* Ensure proper line breaks and spacing */
+    white-space: pre-wrap;
+    word-wrap: break-word;
+  }
+  
+  .prose pre {
+    /* Better code block styling */
+    @apply bg-muted border rounded-lg p-4 overflow-x-auto;
+  }
+  
+  .prose code {
+    /* Inline code styling */
+    @apply bg-muted px-1.5 py-0.5 rounded text-sm font-mono;
+  }
+  
+  .prose pre code {
+    /* Code inside pre blocks shouldn't have background */
+    @apply bg-transparent p-0;
+  }
+  
+  /* Fix for bold text rendering */
+  .prose strong {
+    @apply font-semibold;
+  }
+  
+  /* Fix for italic text rendering */
+  .prose em {
+    @apply italic;
+  }
+  
+  /* Ensure proper paragraph spacing */
+  .prose p {
+    @apply mb-4 last:mb-0;
+  }
+  
+  /* Better list styling */
+  .prose ul, .prose ol {
+    @apply mb-4 last:mb-0;
+  }
+  
+  .prose li {
+    @apply mb-1;
+  }
+}

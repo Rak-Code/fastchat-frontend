@@ -5,7 +5,9 @@ import type React from "react"
 import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
+import { MarkdownMessage } from "@/components/markdown-message"
 import { Send, RotateCcw, Loader2 } from "lucide-react"
+import { useStreamingChat } from "@/hooks/use-streaming-chat"
 
 type Message = {
   type: "user" | "ai"
@@ -18,8 +20,10 @@ export default function ChatPage() {
   const [conversationId, setConversationId] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [currentStreamingMessage, setCurrentStreamingMessage] = useState("")
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const { streamChat, isStreaming } = useStreamingChat()
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -31,10 +35,10 @@ export default function ChatPage() {
 
   // Focus input field after messages update (especially after AI response)
   useEffect(() => {
-    if (!isLoading && textareaRef.current) {
+    if (!isLoading && !isStreaming && textareaRef.current) {
       textareaRef.current.focus()
     }
-  }, [messages, isLoading])
+  }, [messages, isLoading, isStreaming])
 
   // Create session on mount
   useEffect(() => {
@@ -72,58 +76,47 @@ export default function ChatPage() {
   }, [])
 
   const handleSend = async () => {
-    if (!input.trim() || !conversationId || isLoading) return
+    if (!input.trim() || !conversationId || isLoading || isStreaming) return
 
     const userMessage = input.trim()
 
     // Clear input and error
     setInput("")
     setError(null)
+    setCurrentStreamingMessage("")
 
     // Add user message immediately
     setMessages((prev) => [...prev, { type: "user", content: userMessage }])
 
-    // Show loading state
-    setIsLoading(true)
-
-    try {
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          conversationId,
-          message: userMessage,
-        }),
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.error || "Failed to send message")
-      }
-
-      const data = await response.json()
-
-      // Add AI response
-      setMessages((prev) => [...prev, { type: "ai", content: data.reply }])
-      
-      // Focus input field after AI response is added
-      setTimeout(() => {
+    // Start streaming
+    await streamChat(userMessage, {
+      conversationId,
+      onChunk: (chunk) => {
+        setCurrentStreamingMessage((prev) => prev + chunk)
+      },
+      onComplete: (fullMessage) => {
+        // Add the complete AI response to messages
+        setMessages((prev) => [...prev, { type: "ai", content: fullMessage }])
+        setCurrentStreamingMessage("")
+        
+        // Focus input field after AI response is added
+        setTimeout(() => {
+          textareaRef.current?.focus()
+        }, 100)
+      },
+      onError: (errorMessage) => {
+        console.error("Streaming error:", errorMessage)
+        setError("Something went wrong. Please try again.")
+        setCurrentStreamingMessage("")
+        
+        // Remove the user message if the request failed
+        setMessages((prev) => prev.slice(0, -1))
+        // Restore the input
+        setInput(userMessage)
+        
         textareaRef.current?.focus()
-      }, 100)
-    } catch (err) {
-      console.error("Error sending message:", err)
-      setError("Something went wrong. Please try again.")
-
-      // Remove the user message if the request failed
-      setMessages((prev) => prev.slice(0, -1))
-      // Restore the input
-      setInput(userMessage)
-    } finally {
-      setIsLoading(false)
-      textareaRef.current?.focus()
-    }
+      }
+    })
   }
 
   const handleClearChat = async () => {
@@ -204,12 +197,33 @@ export default function ChatPage() {
                       message.type === "user" ? "bg-muted text-foreground" : "bg-muted text-foreground"
                     }`}
                   >
-                    <p className="whitespace-pre-wrap break-words leading-relaxed">{message.content}</p>
+                    {message.type === "ai" ? (
+                      <>
+                        <MarkdownMessage content={message.content} />
+                        {/* Fallback if markdown doesn't render */}
+                        {!message.content.trim() && (
+                          <p className="whitespace-pre-wrap break-words leading-relaxed text-muted-foreground">
+                            [Empty response]
+                          </p>
+                        )}
+                      </>
+                    ) : (
+                      <p className="whitespace-pre-wrap break-words leading-relaxed">{message.content}</p>
+                    )}
                   </div>
                 </div>
               ))}
 
-              {isLoading && (
+              {isStreaming && currentStreamingMessage && (
+                <div className="flex justify-start">
+                  <div className="max-w-[85%] rounded-2xl px-4 py-3 bg-muted text-foreground">
+                    <MarkdownMessage content={currentStreamingMessage} />
+                    <div className="inline-block w-2 h-5 bg-foreground animate-pulse ml-1" />
+                  </div>
+                </div>
+              )}
+
+              {(isLoading || isStreaming) && !currentStreamingMessage && (
                 <div className="flex justify-start">
                   <div className="max-w-[85%] rounded-2xl px-4 py-3 bg-muted text-foreground">
                     <div className="flex items-center gap-2">
@@ -239,7 +253,7 @@ export default function ChatPage() {
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder="Ask anything"
-                disabled={!conversationId || isLoading}
+                disabled={!conversationId || isLoading || isStreaming}
                 className="min-h-[48px] max-h-[200px] resize-none rounded-full px-5 py-3"
                 rows={1}
               />
@@ -247,11 +261,11 @@ export default function ChatPage() {
 
             <Button
               onClick={handleSend}
-              disabled={!input.trim() || !conversationId || isLoading}
+              disabled={!input.trim() || !conversationId || isLoading || isStreaming}
               size="icon"
               className="h-12 w-12 shrink-0 rounded-full"
             >
-              {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}
+              {isLoading || isStreaming ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}
               <span className="sr-only">Send message</span>
             </Button>
           </div>

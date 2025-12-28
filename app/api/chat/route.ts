@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000"
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8080"
 
 export async function POST(request: Request) {
   try {
@@ -37,7 +37,23 @@ export async function POST(request: Request) {
     }
 
     const data = await response.json()
-    return NextResponse.json(data)
+    
+    // Validate response structure
+    if (!data.reply) {
+      console.error('Invalid response structure:', data)
+      return NextResponse.json({ error: "Invalid response from backend" }, { status: 500 })
+    }
+    
+    // Clean up the reply content to handle potential formatting issues
+    const cleanReply = data.reply
+      .replace(/^\*\*\s*$/, '') // Remove standalone **
+      .replace(/^\*\s*$/, '') // Remove standalone *
+      .trim()
+    
+    return NextResponse.json({
+      ...data,
+      reply: cleanReply
+    })
   } catch (error) {
     console.error("Error sending message:", error)
     return NextResponse.json({ error: "Failed to send message" }, { status: 500 })
