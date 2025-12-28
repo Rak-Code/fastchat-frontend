@@ -29,6 +29,13 @@ export default function ChatPage() {
     scrollToBottom()
   }, [messages])
 
+  // Focus input field after messages update (especially after AI response)
+  useEffect(() => {
+    if (!isLoading && textareaRef.current) {
+      textareaRef.current.focus()
+    }
+  }, [messages, isLoading])
+
   // Create session on mount
   useEffect(() => {
     const createSession = async () => {
@@ -100,6 +107,11 @@ export default function ChatPage() {
 
       // Add AI response
       setMessages((prev) => [...prev, { type: "ai", content: data.reply }])
+      
+      // Focus input field after AI response is added
+      setTimeout(() => {
+        textareaRef.current?.focus()
+      }, 100)
     } catch (err) {
       console.error("Error sending message:", err)
       setError("Something went wrong. Please try again.")

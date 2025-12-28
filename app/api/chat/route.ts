@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "https://fastchat-backend-xujp.onrender.com"
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000"
 
 export async function POST(request: Request) {
   try {
