@@ -23,6 +23,7 @@ export function useStreamingChat() {
 
     setIsStreaming(true)
     let fullMessage = ''
+    let isFirstToken = true
 
     try {
       const response = await fetch('/api/chat/stream', {
@@ -61,8 +62,16 @@ export function useStreamingChat() {
           if (line.startsWith('data: ')) {
             const data = line.slice(6).trim() // Remove 'data: ' prefix
             if (data && data !== '[DONE]') {
-              fullMessage += data
-              onChunk?.(data)
+              let tokenToAdd = data
+              
+              // Add space before token if this is not the first token
+              if (!isFirstToken) {
+                tokenToAdd = ' ' + data
+              }
+              
+              fullMessage += tokenToAdd
+              onChunk?.(tokenToAdd)
+              isFirstToken = false
             }
           }
         }
