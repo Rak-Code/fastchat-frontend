@@ -201,7 +201,7 @@ export default function ChatPage() {
                 <div key={index} className={`flex ${message.type === "user" ? "justify-end" : "justify-start"}`}>
                   <div
                     className={`max-w-[85%] rounded-2xl px-4 py-3 ${
-                      message.type === "user" ? "bg-primary text-primary-foreground" : "bg-muted text-foreground"
+                      message.type === "user" ? "bg-muted text-foreground" : "bg-muted text-foreground"
                     }`}
                   >
                     <p className="whitespace-pre-wrap break-words leading-relaxed">{message.content}</p>
