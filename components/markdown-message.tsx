@@ -30,7 +30,7 @@ export function MarkdownMessage({ content, className = "" }: MarkdownMessageProp
         remarkPlugins={[remarkGfm]}
         components={{
           // Customize code blocks
-          code: ({ node, inline, className, children, ...props }) => {
+          code: ({ node, inline, className, children, ...props }: any) => {
             const match = /language-(\w+)/.exec(className || '')
             return !inline && match ? (
               <pre className="bg-secondary/50 border rounded-md p-3 overflow-x-auto my-2">

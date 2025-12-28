@@ -59,15 +59,11 @@ export function useStreamingChat() {
         const lines = chunk.split('\n')
         for (const line of lines) {
           if (line.startsWith('data: ')) {
-            const data = line.slice(6) // Remove 'data: ' prefix
-            if (data.trim() && data !== '[DONE]') {
+            const data = line.slice(6).trim() // Remove 'data: ' prefix
+            if (data && data !== '[DONE]') {
               fullMessage += data
               onChunk?.(data)
             }
-          } else if (line.trim() && !line.startsWith(':')) {
-            // Handle plain text chunks (non-SSE format)
-            fullMessage += line
-            onChunk?.(line)
           }
         }
       }

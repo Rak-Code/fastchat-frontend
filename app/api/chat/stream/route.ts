@@ -37,8 +37,63 @@ export async function POST(request: NextRequest) {
       return new Response(errorText, { status: response.status })
     }
 
-    // Return the streaming response directly
-    return new Response(response.body, {
+    // Create a proper streaming response that handles the backend SSE format
+    const stream = new ReadableStream({
+      async start(controller) {
+        const reader = response.body?.getReader()
+        if (!reader) {
+          controller.close()
+          return
+        }
+
+        const decoder = new TextDecoder()
+        let buffer = ''
+
+        try {
+          while (true) {
+            const { value, done } = await reader.read()
+            
+            if (done) break
+
+            buffer += decoder.decode(value, { stream: true })
+            const lines = buffer.split('\n')
+            
+            // Keep the last incomplete line in the buffer
+            buffer = lines.pop() || ''
+            
+            for (const line of lines) {
+              if (line.startsWith('data: ')) {
+                const data = line.slice(6).trim()
+                if (data && data !== '[DONE]') {
+                  // Send as proper SSE format
+                  controller.enqueue(new TextEncoder().encode(`data: ${data}\n\n`))
+                }
+              }
+            }
+          }
+          
+          // Handle any remaining buffer content
+          if (buffer.trim()) {
+            const lines = buffer.split('\n')
+            for (const line of lines) {
+              if (line.startsWith('data: ')) {
+                const data = line.slice(6).trim()
+                if (data && data !== '[DONE]') {
+                  controller.enqueue(new TextEncoder().encode(`data: ${data}\n\n`))
+                }
+              }
+            }
+          }
+          
+        } catch (error) {
+          console.error('Stream processing error:', error)
+        } finally {
+          controller.close()
+        }
+      },
+    })
+
+    return new Response(stream, {
       headers: {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
