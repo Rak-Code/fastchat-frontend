@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { MarkdownMessage } from "@/components/markdown-message"
 import { Send, RotateCcw, Loader2 } from "lucide-react"
-import { useStreamingChat } from "@/hooks/use-streaming-chat"
+// import { useStreamingChat } from "@/hooks/use-streaming-chat"
 
 type Message = {
   type: "user" | "ai"
@@ -20,10 +20,10 @@ export default function ChatPage() {
   const [conversationId, setConversationId] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [currentStreamingMessage, setCurrentStreamingMessage] = useState("")
+  // const [currentStreamingMessage, setCurrentStreamingMessage] = useState("")
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const { streamChat, isStreaming } = useStreamingChat()
+  // const { streamChat, isStreaming } = useStreamingChat()
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -35,10 +35,10 @@ export default function ChatPage() {
 
   // Focus input field after messages update (especially after AI response)
   useEffect(() => {
-    if (!isLoading && !isStreaming && textareaRef.current) {
+    if (!isLoading && textareaRef.current) {
       textareaRef.current.focus()
     }
-  }, [messages, isLoading, isStreaming])
+  }, [messages, isLoading])
 
   // Create session on mount
   useEffect(() => {
@@ -76,47 +76,58 @@ export default function ChatPage() {
   }, [])
 
   const handleSend = async () => {
-    if (!input.trim() || !conversationId || isLoading || isStreaming) return
+    if (!input.trim() || !conversationId || isLoading) return
 
     const userMessage = input.trim()
 
     // Clear input and error
     setInput("")
     setError(null)
-    setCurrentStreamingMessage("")
+    setIsLoading(true)
 
     // Add user message immediately
     setMessages((prev) => [...prev, { type: "user", content: userMessage }])
 
-    // Start streaming
-    await streamChat(userMessage, {
-      conversationId,
-      onChunk: (chunk) => {
-        setCurrentStreamingMessage((prev) => prev + chunk)
-      },
-      onComplete: (fullMessage) => {
-        // Add the complete AI response to messages
-        setMessages((prev) => [...prev, { type: "ai", content: fullMessage }])
-        setCurrentStreamingMessage("")
-        
-        // Focus input field after AI response is added
-        setTimeout(() => {
-          textareaRef.current?.focus()
-        }, 100)
-      },
-      onError: (errorMessage) => {
-        console.error("Streaming error:", errorMessage)
-        setError("Something went wrong. Please try again.")
-        setCurrentStreamingMessage("")
-        
-        // Remove the user message if the request failed
-        setMessages((prev) => prev.slice(0, -1))
-        // Restore the input
-        setInput(userMessage)
-        
-        textareaRef.current?.focus()
+    try {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          conversationId,
+          message: userMessage,
+        }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || 'Failed to send message')
       }
-    })
+
+      const data = await response.json()
+      
+      // Add the AI response to messages
+      setMessages((prev) => [...prev, { type: "ai", content: data.reply }])
+      
+      // Focus input field after AI response is added
+      setTimeout(() => {
+        textareaRef.current?.focus()
+      }, 100)
+
+    } catch (error) {
+      console.error("Chat error:", error)
+      setError("Something went wrong. Please try again.")
+      
+      // Remove the user message if the request failed
+      setMessages((prev) => prev.slice(0, -1))
+      // Restore the input
+      setInput(userMessage)
+      
+      textareaRef.current?.focus()
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   const handleClearChat = async () => {
@@ -214,6 +225,7 @@ export default function ChatPage() {
                 </div>
               ))}
 
+              {/* Streaming message display - DISABLED
               {isStreaming && currentStreamingMessage && (
                 <div className="flex justify-start">
                   <div className="max-w-[85%] rounded-2xl px-4 py-3 bg-muted text-foreground">
@@ -222,8 +234,9 @@ export default function ChatPage() {
                   </div>
                 </div>
               )}
+              */}
 
-              {(isLoading || isStreaming) && !currentStreamingMessage && (
+              {isLoading && (
                 <div className="flex justify-start">
                   <div className="max-w-[85%] rounded-2xl px-4 py-3 bg-muted text-foreground">
                     <div className="flex items-center gap-2">
@@ -253,7 +266,7 @@ export default function ChatPage() {
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder="Ask anything"
-                disabled={!conversationId || isLoading || isStreaming}
+                disabled={!conversationId || isLoading}
                 className="min-h-[48px] max-h-[200px] resize-none rounded-full px-5 py-3"
                 rows={1}
               />
@@ -261,11 +274,11 @@ export default function ChatPage() {
 
             <Button
               onClick={handleSend}
-              disabled={!input.trim() || !conversationId || isLoading || isStreaming}
+              disabled={!input.trim() || !conversationId || isLoading}
               size="icon"
               className="h-12 w-12 shrink-0 rounded-full"
             >
-              {isLoading || isStreaming ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}
+              {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}
               <span className="sr-only">Send message</span>
             </Button>
           </div>
