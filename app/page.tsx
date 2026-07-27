@@ -7,11 +7,16 @@ import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { MarkdownMessage } from "@/components/markdown-message"
 import { Send, RotateCcw, Loader2 } from "lucide-react"
+import { FileUploadButton } from "@/components/file-upload/file-upload-button"
+import { FilePreview } from "@/components/file-upload/file-preview"
+import { DropZone } from "@/components/file-upload/drop-zone"
+import { validateFile } from "@/components/file-upload/file-validation"
 // import { useStreamingChat } from "@/hooks/use-streaming-chat"
 
 type Message = {
   type: "user" | "ai"
   content: string
+  hasAttachment?: boolean
 }
 
 export default function ChatPage() {
@@ -20,6 +25,9 @@ export default function ChatPage() {
   const [conversationId, setConversationId] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [attachedFile, setAttachedFile] = useState<File | null>(null)
+  const [fileError, setFileError] = useState<string | null>(null)
+  const [isDragOver, setIsDragOver] = useState(false)
   // const [currentStreamingMessage, setCurrentStreamingMessage] = useState("")
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -39,6 +47,17 @@ export default function ChatPage() {
       textareaRef.current.focus()
     }
   }, [messages, isLoading])
+
+  // Escape key handler to remove attached file
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && attachedFile) {
+        handleFileRemove()
+      }
+    }
+    document.addEventListener("keydown", handleEscape)
+    return () => document.removeEventListener("keydown", handleEscape)
+  }, [attachedFile])
 
   // Create session on mount
   useEffect(() => {
@@ -75,10 +94,28 @@ export default function ChatPage() {
     }
   }, [])
 
-  const handleSend = async () => {
-    if (!input.trim() || !conversationId || isLoading) return
+  const handleFileSelect = (file: File) => {
+    const validation = validateFile(file)
+    if (!validation.valid) {
+      setFileError(validation.error!)
+      setAttachedFile(null)
+      return
+    }
 
-    const userMessage = input.trim()
+    // Clear any previous error and replace any existing file
+    setFileError(null)
+    setAttachedFile(file)
+  }
+
+  const handleFileRemove = () => {
+    setAttachedFile(null)
+    setFileError(null)
+  }
+
+  const handleSend = async () => {
+    if ((!input.trim() && !attachedFile) || !conversationId || isLoading) return
+
+    const userMessage = input.trim() || "(file attached)"
 
     // Clear input and error
     setInput("")
@@ -86,44 +123,73 @@ export default function ChatPage() {
     setIsLoading(true)
 
     // Add user message immediately
-    setMessages((prev) => [...prev, { type: "user", content: userMessage }])
+    setMessages((prev) => [...prev, { type: "user", content: userMessage, hasAttachment: !!attachedFile }])
+
+    const currentFile = attachedFile
 
     try {
-      const response = await fetch('/api/chat', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          conversationId,
-          message: userMessage,
-        }),
-      })
+      if (currentFile) {
+        // Use multipart/form-data when file is attached
+        const formData = new FormData()
+        formData.append("conversationId", conversationId)
+        formData.append("message", userMessage)
+        formData.append("file", currentFile)
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.error || 'Failed to send message')
+        const response = await fetch("/api/chat", {
+          method: "POST",
+          body: formData,
+        })
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}))
+          throw new Error(errorData.error || "Failed to send message")
+        }
+
+        const data = await response.json()
+
+        // Add the AI response to messages
+        setMessages((prev) => [...prev, { type: "ai", content: data.reply }])
+
+        // Clear attached file after successful send
+        setAttachedFile(null)
+        setFileError(null)
+      } else {
+        // Use JSON for text-only messages (backward compatible)
+        const response = await fetch("/api/chat", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            conversationId,
+            message: userMessage,
+          }),
+        })
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}))
+          throw new Error(errorData.error || "Failed to send message")
+        }
+
+        const data = await response.json()
+
+        // Add the AI response to messages
+        setMessages((prev) => [...prev, { type: "ai", content: data.reply }])
       }
 
-      const data = await response.json()
-      
-      // Add the AI response to messages
-      setMessages((prev) => [...prev, { type: "ai", content: data.reply }])
-      
       // Focus input field after AI response is added
       setTimeout(() => {
         textareaRef.current?.focus()
       }, 100)
-
     } catch (error) {
       console.error("Chat error:", error)
       setError("Something went wrong. Please try again.")
-      
+
       // Remove the user message if the request failed
       setMessages((prev) => prev.slice(0, -1))
       // Restore the input
       setInput(userMessage)
-      
+
       textareaRef.current?.focus()
     } finally {
       setIsLoading(false)
@@ -140,6 +206,8 @@ export default function ChatPage() {
 
       // Clear messages
       setMessages([])
+      setAttachedFile(null)
+      setFileError(null)
 
       // Create new session
       const response = await fetch("/api/session", {
@@ -170,124 +238,177 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="flex flex-col h-screen bg-background">
-      {/* Header */}
-      <header className="sticky top-0 z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="container mx-auto flex h-16 items-center justify-between px-4">
-          <div>
-            <h1 className="text-xl font-semibold text-foreground">FastChat</h1>
-          </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleClearChat}
-            disabled={messages.length === 0}
-            className="gap-2"
-          >
-            <RotateCcw className="h-4 w-4" />
-            <span className="hidden sm:inline">New Chat</span>
-          </Button>
-        </div>
-      </header>
-
-      {/* Chat Area */}
-      <main className="flex-1 overflow-y-auto">
-        <div className="container mx-auto max-w-3xl px-4 py-6">
-          {messages.length === 0 ? (
-            <div className="flex h-full items-center justify-center min-h-[50vh]">
-              <div className="text-center">
-                <h2 className="text-2xl font-semibold text-foreground">Start a Conversation</h2>
-              </div>
+    <DropZone
+      onFileDrop={handleFileSelect}
+      disabled={isLoading}
+      isDragOver={isDragOver}
+      onDragOverChange={setIsDragOver}
+    >
+      <div className="flex flex-col h-screen bg-background">
+        {/* Header */}
+        <header className="sticky top-0 z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+          <div className="container mx-auto flex h-16 items-center justify-between px-4">
+            <div>
+              <h1 className="text-xl font-semibold text-foreground">FastChat</h1>
             </div>
-          ) : (
-            <div className="space-y-6">
-              {messages.map((message, index) => (
-                <div key={index} className={`flex ${message.type === "user" ? "justify-end" : "justify-start"}`}>
-                  <div
-                    className={`max-w-[85%] rounded-2xl px-4 py-3 ${
-                      message.type === "user" ? "bg-muted text-foreground" : "bg-muted text-foreground"
-                    }`}
-                  >
-                    {message.type === "ai" ? (
-                      <>
-                        <MarkdownMessage content={message.content} />
-                        {/* Fallback if markdown doesn't render */}
-                        {!message.content.trim() && (
-                          <p className="whitespace-pre-wrap break-words leading-relaxed text-muted-foreground">
-                            [Empty response]
-                          </p>
-                        )}
-                      </>
-                    ) : (
-                      <p className="whitespace-pre-wrap break-words leading-relaxed">{message.content}</p>
-                    )}
-                  </div>
-                </div>
-              ))}
-
-              {/* Streaming message display - DISABLED
-              {isStreaming && currentStreamingMessage && (
-                <div className="flex justify-start">
-                  <div className="max-w-[85%] rounded-2xl px-4 py-3 bg-muted text-foreground">
-                    <MarkdownMessage content={currentStreamingMessage} />
-                    <div className="inline-block w-2 h-5 bg-foreground animate-pulse ml-1" />
-                  </div>
-                </div>
-              )}
-              */}
-
-              {isLoading && (
-                <div className="flex justify-start">
-                  <div className="max-w-[85%] rounded-2xl px-4 py-3 bg-muted text-foreground">
-                    <div className="flex items-center gap-2">
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      <span className="text-muted-foreground">Thinking...</span>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              <div ref={messagesEndRef} />
-            </div>
-          )}
-        </div>
-      </main>
-
-      {/* Input Area */}
-      <div className="bg-background">
-        <div className="container mx-auto max-w-3xl px-4 py-4">
-          {error && <div className="mb-3 text-sm text-destructive">{error}</div>}
-
-          <div className="flex gap-3 items-center">
-            <div className="flex-1 relative">
-              <Textarea
-                ref={textareaRef}
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="Ask anything"
-                disabled={!conversationId || isLoading}
-                className="min-h-[48px] max-h-[200px] resize-none rounded-full px-5 py-3"
-                rows={1}
-              />
-            </div>
-
             <Button
-              onClick={handleSend}
-              disabled={!input.trim() || !conversationId || isLoading}
-              size="icon"
-              className="h-12 w-12 shrink-0 rounded-full"
+              variant="ghost"
+              size="sm"
+              onClick={handleClearChat}
+              disabled={messages.length === 0}
+              className="gap-2"
             >
-              {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}
-              <span className="sr-only">Send message</span>
+              <RotateCcw className="h-4 w-4" />
+              <span className="hidden sm:inline">New Chat</span>
             </Button>
           </div>
+        </header>
 
-          <p className="mt-2 text-xs text-center text-muted-foreground">
-            Press Enter to send, Shift + Enter for new line
-          </p>
+        {/* Chat Area */}
+        <main className="flex-1 overflow-y-auto">
+          <div className="container mx-auto max-w-3xl px-4 py-6">
+            {messages.length === 0 ? (
+              <div className="flex h-full items-center justify-center min-h-[50vh]">
+                <div className="text-center">
+                  <h2 className="text-2xl font-semibold text-foreground">Start a Conversation</h2>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {messages.map((message, index) => (
+                  <div key={index} className={`flex ${message.type === "user" ? "justify-end" : "justify-start"}`}>
+                    <div
+                      className={`max-w-[85%] rounded-2xl px-4 py-3 ${
+                        message.type === "user" ? "bg-muted text-foreground" : "bg-muted text-foreground"
+                      }`}
+                    >
+                      {message.type === "ai" ? (
+                        <>
+                          <MarkdownMessage content={message.content} />
+                          {/* Fallback if markdown doesn't render */}
+                          {!message.content.trim() && (
+                            <p className="whitespace-pre-wrap break-words leading-relaxed text-muted-foreground">
+                              [Empty response]
+                            </p>
+                          )}
+                        </>
+                      ) : (
+                        <div>
+                          <p className="whitespace-pre-wrap break-words leading-relaxed">{message.content}</p>
+                          {/* Attachment indicator */}
+                          {message.hasAttachment && (
+                            <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+                              <span className="inline-block h-3 w-3">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3">
+                                  <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
+                                  <polyline points="14 2 14 8 20 8" />
+                                </svg>
+                              </span>
+                              <span>File attached</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+
+                {/* Streaming message display - DISABLED
+                {isStreaming && currentStreamingMessage && (
+                  <div className="flex justify-start">
+                    <div className="max-w-[85%] rounded-2xl px-4 py-3 bg-muted text-foreground">
+                      <MarkdownMessage content={currentStreamingMessage} />
+                      <div className="inline-block w-2 h-5 bg-foreground animate-pulse ml-1" />
+                    </div>
+                  </div>
+                )}
+                */}
+
+                {isLoading && (
+                  <div className="flex justify-start">
+                    <div className="max-w-[85%] rounded-2xl px-4 py-3 bg-muted text-foreground">
+                      <div className="flex items-center gap-2">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <span className="text-muted-foreground">Thinking...</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div ref={messagesEndRef} />
+              </div>
+            )}
+          </div>
+        </main>
+
+        {/* Input Area */}
+        <div className="bg-background">
+          <div className="container mx-auto max-w-3xl px-4 py-4">
+            {/* File error message */}
+            {fileError && (
+              <div className="mb-3 text-sm text-destructive" role="alert" aria-live="assertive">
+                {fileError}
+              </div>
+            )}
+
+            {/* General error message */}
+            {error && !fileError && (
+              <div className="mb-3 text-sm text-destructive" role="alert" aria-live="assertive">
+                {error}
+              </div>
+            )}
+
+            {/* File preview */}
+            {attachedFile && !fileError && (
+              <div className="mb-3">
+                <FilePreview file={attachedFile} onRemove={handleFileRemove} />
+              </div>
+            )}
+
+            {/* Loading indicator during upload */}
+            {isLoading && attachedFile && (
+              <div className="mb-3 flex items-center gap-2 text-sm text-muted-foreground" aria-live="polite">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span>Uploading...</span>
+              </div>
+            )}
+
+            <div className="flex gap-3 items-center">
+              <FileUploadButton
+                onFileSelect={handleFileSelect}
+                disabled={!conversationId || isLoading}
+              />
+
+              <div className="flex-1 relative">
+                <Textarea
+                  ref={textareaRef}
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder="Ask anything"
+                  disabled={!conversationId || isLoading}
+                  className="min-h-[48px] max-h-[200px] resize-none rounded-full px-5 py-3"
+                  rows={1}
+                />
+              </div>
+
+              <Button
+                onClick={handleSend}
+                disabled={(!input.trim() && !attachedFile) || !conversationId || isLoading}
+                size="icon"
+                className="h-12 w-12 shrink-0 rounded-full"
+              >
+                {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}
+                <span className="sr-only">Send message</span>
+              </Button>
+            </div>
+
+            <p className="mt-2 text-xs text-center text-muted-foreground">
+              Press Enter to send, Shift + Enter for new line
+            </p>
+          </div>
         </div>
       </div>
-    </div>
+    </DropZone>
   )
 }
