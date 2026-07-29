@@ -13,6 +13,27 @@ function parseBackendError(errorData: Record<string, unknown>, fallback: string)
   return (errorData?.message as string) || (errorData?.error as string) || fallback
 }
 
+/** Create a timeout wrapper for fetch requests */
+async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs = 30000): Promise<Response> {
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    })
+    clearTimeout(timeoutId)
+    return response
+  } catch (error) {
+    clearTimeout(timeoutId)
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error('Request timeout - backend server took too long to respond')
+    }
+    throw error
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const contentType = request.headers.get("content-type") || ""
@@ -52,7 +73,7 @@ export async function POST(request: Request) {
 
       let response: Response
       try {
-        response = await fetch(`${BACKEND_URL}/api/chat`, {
+        response = await fetchWithTimeout(`${BACKEND_URL}/api/chat`, {
           method: "POST",
           body: backendFormData,
         })
@@ -64,9 +85,10 @@ export async function POST(request: Request) {
           message: error?.message,
           cause: error?.cause
         })
+        
         return NextResponse.json(
           { 
-            error: "Backend server is not reachable. Please ensure the backend is running.",
+            error: "Backend server is not reachable. Please try again in a few moments.",
             debug: process.env.NODE_ENV !== 'production' ? {
               backendUrl: BACKEND_URL,
               errorName: error?.name,
@@ -127,7 +149,7 @@ export async function POST(request: Request) {
 
     let response: Response
     try {
-      response = await fetch(`${BACKEND_URL}/api/chat`, {
+      response = await fetchWithTimeout(`${BACKEND_URL}/api/chat`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -145,9 +167,10 @@ export async function POST(request: Request) {
         message: error?.message,
         cause: error?.cause
       })
+      
       return NextResponse.json(
         { 
-          error: "Backend server is not reachable. Please ensure the backend is running.",
+          error: "Backend server is not reachable. Please try again in a few moments.",
           debug: process.env.NODE_ENV !== 'production' ? {
             backendUrl: BACKEND_URL,
             errorName: error?.name,
@@ -186,6 +209,6 @@ export async function POST(request: Request) {
     })
   } catch (error: unknown) {
     console.error("[chat] Unhandled error:", error)
-    return NextResponse.json({ error: "Failed to send message" }, { status: 500 })
+    return NextResponse.json({ error: "An unexpected error occurred. Please try again." }, { status: 500 })
   }
 }
