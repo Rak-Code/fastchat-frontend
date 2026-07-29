@@ -31,6 +31,7 @@ export function FileUploadButton({ onFileSelect, disabled = false }: FileUploadB
         onChange={handleChange}
         className="hidden"
         aria-hidden="true"
+        suppressHydrationWarning={true}
       />
       <Button
         type="button"
