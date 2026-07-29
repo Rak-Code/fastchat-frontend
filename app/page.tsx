@@ -67,20 +67,21 @@ export default function ChatPage() {
           method: "POST",
         })
 
-        if (!response.ok) {
-          throw new Error("Failed to create session")
-        }
+        const data = response.ok ? await response.json().catch(() => ({})) : {}
+        const newId = data.conversationId || (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `conv-${Date.now()}`)
 
-        const data = await response.json()
-        setConversationId(data.conversationId)
+        setConversationId(newId)
 
-        // Store in localStorage for persistence
         if (typeof window !== "undefined") {
-          localStorage.setItem("fastchat_conversation_id", data.conversationId)
+          localStorage.setItem("fastchat_conversation_id", newId)
         }
       } catch (err) {
         console.error("Error creating session:", err)
-        setError("Failed to initialize chat. Please refresh the page.")
+        const fallbackId = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `conv-${Date.now()}`
+        setConversationId(fallbackId)
+        if (typeof window !== "undefined") {
+          localStorage.setItem("fastchat_conversation_id", fallbackId)
+        }
       }
     }
 
@@ -183,11 +184,12 @@ export default function ChatPage() {
       }, 100)
     } catch (error) {
       console.error("Chat error:", error)
-      setError("Something went wrong. Please try again.")
+      const errorMessage = error instanceof Error ? error.message : "Something went wrong. Please try again."
+      setError(errorMessage)
 
       // Remove the user message if the request failed
       setMessages((prev) => prev.slice(0, -1))
-      // Restore the input
+      // Restore the input (preserve file so user can retry)
       setInput(userMessage)
 
       textareaRef.current?.focus()
@@ -195,6 +197,7 @@ export default function ChatPage() {
       setIsLoading(false)
     }
   }
+
 
   const handleClearChat = async () => {
     if (!conversationId) return
@@ -209,24 +212,26 @@ export default function ChatPage() {
       setAttachedFile(null)
       setFileError(null)
 
-      // Create new session
       const response = await fetch("/api/session", {
         method: "POST",
-      })
+      }).catch(() => null)
 
-      if (response.ok) {
-        const data = await response.json()
-        setConversationId(data.conversationId)
+      const data = response && response.ok ? await response.json().catch(() => ({})) : {}
+      const newId = data.conversationId || (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `conv-${Date.now()}`)
 
-        if (typeof window !== "undefined") {
-          localStorage.setItem("fastchat_conversation_id", data.conversationId)
-        }
+      setConversationId(newId)
+      if (typeof window !== "undefined") {
+        localStorage.setItem("fastchat_conversation_id", newId)
       }
 
       setError(null)
     } catch (err) {
       console.error("Error clearing chat:", err)
-      setError("Failed to clear chat. Please refresh the page.")
+      const fallbackId = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `conv-${Date.now()}`
+      setConversationId(fallbackId)
+      if (typeof window !== "undefined") {
+        localStorage.setItem("fastchat_conversation_id", fallbackId)
+      }
     }
   }
 

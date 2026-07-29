@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server"
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8080"
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || process.env.BACKEND_URL || "http://localhost:8080"
+
+/** Parse a meaningful error message from a backend error response body. */
+function parseBackendError(errorData: Record<string, unknown>, fallback: string): string {
+  // Backend GlobalExceptionHandler uses "message" key, not "error"
+  return (errorData?.message as string) || (errorData?.error as string) || fallback
+}
 
 export async function POST(request: Request) {
   try {
@@ -39,27 +45,35 @@ export async function POST(request: Request) {
         backendFormData.append("file", file)
       }
 
-      const response = await fetch(`${BACKEND_URL}/api/chat`, {
-        method: "POST",
-        body: backendFormData,
-      })
+      let response: Response
+      try {
+        response = await fetch(`${BACKEND_URL}/api/chat`, {
+          method: "POST",
+          body: backendFormData,
+        })
+      } catch (fetchErr) {
+        console.error("[chat/multipart] Backend unreachable at", BACKEND_URL, fetchErr)
+        return NextResponse.json(
+          { error: "Backend server is not reachable. Please ensure the backend is running." },
+          { status: 503 }
+        )
+      }
 
       if (!response.ok) {
         if (response.status === 413) {
           return NextResponse.json({ error: "File too large" }, { status: 413 })
         }
         const errorData = await response.json().catch(() => ({}))
-        return NextResponse.json(
-          { error: errorData.error || "Failed to send message" },
-          { status: response.status },
-        )
+        const errorMsg = parseBackendError(errorData, "Failed to send message")
+        console.error("[chat/multipart] Backend returned", response.status, errorMsg, errorData)
+        return NextResponse.json({ error: errorMsg }, { status: response.status })
       }
 
       const data = await response.json()
 
       // Validate response structure
       if (!data.reply) {
-        console.error("Invalid response structure:", data)
+        console.error("[chat/multipart] Invalid response structure:", data)
         return NextResponse.json({ error: "Invalid response from backend" }, { status: 500 })
       }
 
@@ -93,27 +107,38 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Message too long (max 4000 characters)" }, { status: 400 })
     }
 
-    const response = await fetch(`${BACKEND_URL}/api/chat`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        conversationId,
-        message: message.trim(),
-      }),
-    })
+    let response: Response
+    try {
+      response = await fetch(`${BACKEND_URL}/api/chat`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          conversationId,
+          message: message.trim(),
+        }),
+      })
+    } catch (fetchErr) {
+      console.error("[chat/json] Backend unreachable at", BACKEND_URL, fetchErr)
+      return NextResponse.json(
+        { error: "Backend server is not reachable. Please ensure the backend is running." },
+        { status: 503 }
+      )
+    }
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}))
-      throw new Error(errorData.error || "Failed to send message")
+      const errorMsg = parseBackendError(errorData, "Failed to send message")
+      console.error("[chat/json] Backend returned", response.status, errorMsg, errorData)
+      return NextResponse.json({ error: errorMsg }, { status: response.status })
     }
 
     const data = await response.json()
 
     // Validate response structure
     if (!data.reply) {
-      console.error("Invalid response structure:", data)
+      console.error("[chat/json] Invalid response structure:", data)
       return NextResponse.json({ error: "Invalid response from backend" }, { status: 500 })
     }
 
@@ -129,7 +154,7 @@ export async function POST(request: Request) {
       hasAttachment: false,
     })
   } catch (error) {
-    console.error("Error sending message:", error)
+    console.error("[chat] Unhandled error:", error)
     return NextResponse.json({ error: "Failed to send message" }, { status: 500 })
   }
-}
+}

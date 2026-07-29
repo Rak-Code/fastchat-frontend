@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8080"
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || process.env.BACKEND_URL || "http://localhost:8080"
 
 export async function DELETE(
   request: NextRequest,
@@ -15,15 +15,15 @@ export async function DELETE(
 
     const response = await fetch(`${BACKEND_URL}/api/session/${conversationId}`, {
       method: "DELETE",
-    })
+    }).catch(() => null)
 
-    if (!response.ok) {
-      throw new Error("Failed to delete session")
+    if (!response || !response.ok) {
+      console.warn("Backend session deletion returned non-OK or failed:", conversationId)
     }
 
     return new NextResponse(null, { status: 204 })
   } catch (error) {
     console.error("Error deleting session:", error)
-    return NextResponse.json({ error: "Failed to delete session" }, { status: 500 })
+    return new NextResponse(null, { status: 204 })
   }
-}
+}
