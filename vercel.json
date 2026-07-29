@@ -1,0 +1,12 @@
+{
+  "env": {
+    "NEXT_PUBLIC_BACKEND_URL": "https://fastchat-backend-xujp.onrender.com",
+    "BACKEND_URL": "https://fastchat-backend-xujp.onrender.com"
+  },
+  "build": {
+    "env": {
+      "NEXT_PUBLIC_BACKEND_URL": "https://fastchat-backend-xujp.onrender.com",
+      "BACKEND_URL": "https://fastchat-backend-xujp.onrender.com"
+    }
+  }
+}

@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server"
+import { getBackendUrl, logEnvironmentConfig } from "@/lib/config"
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || process.env.BACKEND_URL || "http://localhost:8080"
+const BACKEND_URL = getBackendUrl()
+
+// Debug logging for environment variables (only log in development)
+logEnvironmentConfig('session')
 
 export async function POST() {
   try {
@@ -19,9 +23,9 @@ export async function POST() {
 
     const data = await response.json()
     return NextResponse.json(data)
-  } catch (error) {
+  } catch (error: unknown) {
     console.warn("Backend unreachable for session creation, generating fallback session ID:", error)
     const conversationId = crypto.randomUUID()
     return NextResponse.json({ conversationId })
   }
-}
+}

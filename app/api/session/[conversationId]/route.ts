@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server"
+import { getBackendUrl, logEnvironmentConfig } from "@/lib/config"
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || process.env.BACKEND_URL || "http://localhost:8080"
+const BACKEND_URL = getBackendUrl()
+
+// Debug logging for environment variables (only log in development)
+logEnvironmentConfig('session-delete')
 
 export async function DELETE(
   request: NextRequest,
@@ -22,8 +26,8 @@ export async function DELETE(
     }
 
     return new NextResponse(null, { status: 204 })
-  } catch (error) {
+  } catch (error: unknown) {
     console.error("Error deleting session:", error)
     return new NextResponse(null, { status: 204 })
   }
-}
+}

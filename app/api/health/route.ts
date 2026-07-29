@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
+import { getBackendUrl } from "@/lib/config"
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || process.env.BACKEND_URL || "http://localhost:8080"
+const BACKEND_URL = getBackendUrl()
 
 export async function GET() {
   try {
@@ -11,7 +12,7 @@ export async function GET() {
       status: "ok",
       backend: data,
     })
-  } catch (error) {
+  } catch (error: unknown) {
     console.error("Error checking health:", error)
     return NextResponse.json({ status: "error", error: "Backend unavailable" }, { status: 503 })
   }

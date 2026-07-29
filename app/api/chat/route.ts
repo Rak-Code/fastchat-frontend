@@ -1,6 +1,11 @@
-import { NextResponse } from "next/server"
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || process.env.BACKEND_URL || "http://localhost:8080"
+import { NextResponse } from "next/server"
+import { getBackendUrl, logEnvironmentConfig } from "@/lib/config"
+
+const BACKEND_URL = getBackendUrl()
+
+// Debug logging for environment variables (only log in development)
+logEnvironmentConfig('chat')
 
 /** Parse a meaningful error message from a backend error response body. */
 function parseBackendError(errorData: Record<string, unknown>, fallback: string): string {
@@ -51,10 +56,23 @@ export async function POST(request: Request) {
           method: "POST",
           body: backendFormData,
         })
-      } catch (fetchErr) {
+      } catch (fetchErr: unknown) {
         console.error("[chat/multipart] Backend unreachable at", BACKEND_URL, fetchErr)
+        const error = fetchErr as Error
+        console.error("[chat/multipart] Full error details:", {
+          name: error?.name,
+          message: error?.message,
+          cause: error?.cause
+        })
         return NextResponse.json(
-          { error: "Backend server is not reachable. Please ensure the backend is running." },
+          { 
+            error: "Backend server is not reachable. Please ensure the backend is running.",
+            debug: process.env.NODE_ENV !== 'production' ? {
+              backendUrl: BACKEND_URL,
+              errorName: error?.name,
+              errorMessage: error?.message
+            } : undefined
+          },
           { status: 503 }
         )
       }
@@ -119,10 +137,23 @@ export async function POST(request: Request) {
           message: message.trim(),
         }),
       })
-    } catch (fetchErr) {
+    } catch (fetchErr: unknown) {
       console.error("[chat/json] Backend unreachable at", BACKEND_URL, fetchErr)
+      const error = fetchErr as Error
+      console.error("[chat/json] Full error details:", {
+        name: error?.name,
+        message: error?.message,
+        cause: error?.cause
+      })
       return NextResponse.json(
-        { error: "Backend server is not reachable. Please ensure the backend is running." },
+        { 
+          error: "Backend server is not reachable. Please ensure the backend is running.",
+          debug: process.env.NODE_ENV !== 'production' ? {
+            backendUrl: BACKEND_URL,
+            errorName: error?.name,
+            errorMessage: error?.message
+          } : undefined
+        },
         { status: 503 }
       )
     }
@@ -153,8 +184,8 @@ export async function POST(request: Request) {
       reply: cleanReply,
       hasAttachment: false,
     })
-  } catch (error) {
+  } catch (error: unknown) {
     console.error("[chat] Unhandled error:", error)
     return NextResponse.json({ error: "Failed to send message" }, { status: 500 })
   }
-}
+}
